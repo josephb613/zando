@@ -36,6 +36,17 @@ service cloud.firestore {
       }
     }
 
+    // Lots groupés : avancement lisible par tous, écrit uniquement par le module de commandes.
+    match /lots/{id} {
+      allow read: if true;
+      allow write: if false;
+    }
+    // Réservation d'un membre (adresse comprise) : lisible par lui seul, y compris par requête de groupe.
+    match /{path=**}/members/{uid} {
+      allow read: if signedIn() && resource.data.uid == request.auth.uid;
+      allow write: if false;
+    }
+
     // Commandes : créées uniquement par le module de commandes (server/, Admin SDK),
     // qui relit les prix produits et recalcule les totaux. Le client ne peut pas écrire
     // directement une commande, même avec un total falsifié.

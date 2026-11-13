@@ -31,8 +31,8 @@ export type RootParams = {
   Recherche: undefined;
   Resultats: { q?: string; sort?: Sort } | undefined;
   Produit: { id: string };
-  /** `buy` : achat immédiat (ouvre le paiement) ; sinon ajout au panier. */
-  Variantes: { id: string; buy?: boolean };
+  /** `buy` : achat immédiat (ouvre le paiement) ; `lot` : réservation dans le lot groupé ; sinon ajout au panier. */
+  Variantes: { id: string; buy?: boolean; lot?: boolean };
   /** `pick` : choisir l'adresse de la prochaine livraison (depuis Paiement) ; sinon gérer le carnet. */
   Adresses: { pick?: boolean } | undefined;
   Adresse: { id?: string } | undefined;

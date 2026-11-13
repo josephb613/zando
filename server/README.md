@@ -8,6 +8,8 @@ utilisable sur l'offre gratuite Spark via l'Admin SDK.
 | `POST /createOrders` | `{ groups, commune, shipIndex, payMethod, address?, phone? }` | client connecté |
 | `POST /updateOrderPayment` | `{ refs, payMethod, phone? }` | client connecté |
 | `POST /updateOrderStatus` | `{ ref, status }` | admin (`node scripts/set-admin.cjs +243…`) |
+| `POST /joinLot` | `{ productId, lines: [{ variant, qty }], address, phone? }` | client connecté |
+| `POST /leaveLot` | `{ lotId }` | client connecté |
 | `POST /nyoleWebhook` | événement nyole signé | nyole (signature HMAC, pas de jeton Firebase) |
 | `GET /health` | | tout le monde |
 
@@ -52,3 +54,11 @@ Définir `EXPO_PUBLIC_ORDERS_API_URL` (sans `/` final) :
 
 Les règles de livraison, de prix par palier, de paiement et de statut viennent de `src/shared/` (racine de l'app).
 `server/src/shared/` en est une copie générée : modifier `src/shared/*.ts`, puis lancer `npm run shared:sync` à la racine.
+
+## Lots groupés
+
+`joinLot` réserve des pièces dans le lot ouvert d'un article (ou en ouvre un) pour atteindre à plusieurs le premier
+palier de gros ; rien n'est payé à la réservation. Quand le lot est complet, une commande « en attente de paiement »
+est créée pour chaque membre au prix du lot, qu'il paie depuis l'écran Commande (`updateOrderPayment`). Un lot
+incomplet après 48 h (`LOT_HOURS`, `src/shared/lots.ts`) expire sans commande. Après modification de `firestore.rules`
+ou `firestore.indexes.json` : `npx firebase-tools deploy --only firestore`.

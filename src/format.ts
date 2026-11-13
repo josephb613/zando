@@ -27,3 +27,10 @@ export const soldNum = (s: string) => {
 };
 /** « 3,1k vendus », ou rien quand le nombre de ventes de l'article est inconnu. */
 export const soldLabel = (s: string) => (s ? `${s} vendus` : '');
+
+/** Temps restant avant `untilMs` : « 31 h », « 45 min », « moins d'une minute ». */
+export function timeLeft(untilMs: number, nowMs: number) {
+  const min = Math.floor((untilMs - nowMs) / 60000);
+  if (min < 1) return 'moins d’une minute';
+  return min < 60 ? `${min} min` : `${Math.floor(min / 60)} h`;
+}

@@ -7,17 +7,19 @@
  *   users/{uid}/cart/current     panier
  *   users/{uid}/addresses/{id}   adresses de livraison
  *   orders/{id}                  commandes (lecture seule pour l'app ; écrites par le module server/)
+ *   lots/{id}                    lots groupés (lecture publique ; écrits par le module server/)
+ *   lots/{id}/members/{uid}      réservation d'un membre (lisible par lui seul)
  * La configuration du projet vient de google-services.json / GoogleService-Info.plist (voir app.json).
  */
 import { getAuth, onAuthStateChanged, signInWithPhoneNumber, signOut as fbSignOut } from '@react-native-firebase/auth';
 import {
-  getFirestore, doc, getDoc, setDoc, deleteDoc, collection, query, where, orderBy, onSnapshot, serverTimestamp,
+  getFirestore, doc, getDoc, setDoc, deleteDoc, collection, collectionGroup, query, where, orderBy, onSnapshot, serverTimestamp,
   writeBatch, getDocs,
 } from '@react-native-firebase/firestore';
 import type { Query, QueryDocumentSnapshot } from '@react-native-firebase/firestore';
 import type { CatItem } from './catalog';
 import { basePrice, normalizeTiers } from './shared/pricing';
-import { isOrderStatus, OrderStatus, PayMethod } from './shared/orders';
+import { isOrderStatus, isPayMethod, OrderStatus, PayMethod } from './shared/orders';
 
 export type { OrderStatus, PayMethod };
 
@@ -266,6 +268,8 @@ export interface Order {
   payMethod: string;
   payPhone?: string;
   address?: OrderAddress;
+  /** Lot groupé à l'origine de la commande, le cas échéant. */
+  lot?: string;
   createdAt: Date | null;
 }
 
@@ -303,7 +307,52 @@ export function watchOrders(uid: string, cb: (orders: Order[]) => void) {
       count: Number(x.count) || 0, total: Number(x.total) || 0, ship: Number(x.ship) || 0,
       shipIndex: typeof x.shipIndex === 'number' ? x.shipIndex : undefined,
       lines: Array.isArray(x.lines) ? x.lines : [], commune: x.commune ?? '', payMethod: x.payMethod ?? '',
-      payPhone: x.payPhone, address: x.address, createdAt: x.createdAt ? x.createdAt.toDate() : null,
+      payPhone: x.payPhone, address: x.address, lot: typeof x.lot === 'string' ? x.lot : undefined, createdAt: x.createdAt ? x.createdAt.toDate() : null,
     }];
   }), cb);
 }
+
+/**
+ * Lance le paiement Mobile Money d'une commande encore en attente (commande d'un lot groupé, ou paiement
+ * abandonné) ; renvoie l'adresse de la page de paiement, absente si le service de paiement est indisponible.
+ */
+export async function payOrder(order: Pick<Order, 'ref' | 'payMethod' | 'payPhone'>): Promise<string | undefined> {
+  const payMethod: PayMethod = isPayMethod(order.payMethod) ? order.payMethod : 'M-Pesa';
+  const res = await callOrders<{ payUrl?: string }>('updateOrderPayment', { refs: [order.ref], payMethod, phone: order.payPhone });
+  return res.payUrl;
+}
+
+/* ---------- Lots groupés ---------- */
+
+/** Lot ouvert : `taken` pièces réservées sur `target`, au prix unitaire `unit`, jusqu'à `expiresAt`. */
+export interface Lot { id: string; productId: string; target: number; unit: number; taken: number; members: number; expiresAt: number }
+
+/** Lots en cours de remplissage (lecture publique) ; l'échéance est vérifiée à l'affichage. */
+export function watchOpenLots(cb: (lots: Lot[]) => void) {
+  const q = query(collection(db(), 'lots'), where('status', '==', 'open'));
+  return watchList(q, 'lots', docs => docs.map(d => {
+    const x = d.data();
+    return {
+      id: d.id, productId: String(x.productId ?? ''), target: Number(x.target) || 0, unit: Number(x.unit) || 0,
+      taken: Number(x.taken) || 0, members: Number(x.members) || 0, expiresAt: x.expiresAt ? x.expiresAt.toMillis() : 0,
+    };
+  }), cb);
+}
+
+/** Réservations du compte : identifiant du lot -> pièces réservées. */
+export function watchMyLots(uid: string, cb: (mine: Record<string, number>) => void) {
+  const q = query(collectionGroup(db(), 'members'), where('uid', '==', uid));
+  return watchList(q, 'members', docs => docs.flatMap(d => {
+    const lotId = d.ref.parent.parent?.id;
+    return lotId ? [[lotId, Number(d.data().qty) || 0] as [string, number]] : [];
+  }), rows => cb(Object.fromEntries(rows)));
+}
+
+export interface JoinedLot { lotId: string; target: number; taken: number; unit: number; status: 'open' | 'full'; expiresAt: number; ref?: string }
+
+/** Réserve des pièces dans le lot ouvert de l'article, ou en ouvre un ; `ref` : commande créée si le lot est complet. */
+export function joinLot(input: { productId: string; lines: { variant: string; qty: number }[]; address: OrderAddress; phone?: string }) {
+  return callOrders<JoinedLot>('joinLot', input);
+}
+
+export const leaveLot = (lotId: string) => callOrders<{ ok: true }>('leaveLot', { lotId });

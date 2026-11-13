@@ -1,11 +1,12 @@
 import React, { createContext, useCallback, useContext, useEffect, useMemo, useRef, useState } from 'react';
 import { AppState } from 'react-native';
 import {
-  Address, Confirmation, Line, Order, Profile, User, createOrders, loadProfile, saveCart, saveProfile,
-  watchAddresses, watchCart, watchOrders, watchProducts, watchUser,
+  Address, Confirmation, Line, Lot, Order, Profile, User, createOrders, joinLot, leaveLot, loadProfile, saveCart, saveProfile,
+  watchAddresses, watchCart, watchMyLots, watchOpenLots, watchOrders, watchProducts, watchUser,
 } from './firebase';
 import { CAT, CatItem, currentPrice } from './catalog';
 import { SHIPS, isKnownCommune, shipPrice } from './delivery';
+import { lotIsOpen } from './shared/lots';
 import { CASH, PayMethod } from './shared/orders';
 import { MAX_QTY, priceForQty } from './shared/pricing';
 
@@ -350,6 +351,59 @@ function useOrdersState() {
 const [OrdersProvider, useOrders] = createStore('useOrders', useOrdersState);
 export { useOrders };
 
+/* ---------- Lots groupés ---------- */
+
+/** Lot ouvert, avec les pièces que le compte y a réservées (0 s'il n'en fait pas partie). */
+export interface OpenLot extends Lot { mine: number }
+
+function useLotsState() {
+  const { user } = useAuth();
+  const { address } = useAddresses();
+  const uid = user?.uid ?? null;
+  const [all, setAll] = useState<Lot[]>([]);
+  const [mine, setMine] = useState<Record<string, number>>({});
+  /** Heure courante, rafraîchie chaque minute : fait disparaître les lots arrivés à échéance. */
+  const [now, setNow] = useState(() => Date.now());
+
+  useEffect(() => {
+    try {
+      return watchOpenLots(setAll);
+    } catch {
+      return undefined; // Firestore indisponible (web) : aucun lot affiché.
+    }
+  }, []);
+  useEffect(() => {
+    if (!uid) return undefined;
+    const off = watchMyLots(uid, setMine);
+    return () => { off(); setMine({}); };
+  }, [uid]);
+  useEffect(() => {
+    const t = setInterval(() => setNow(Date.now()), 60000);
+    return () => clearInterval(t);
+  }, []);
+
+  /** Lots en cours, le plus proche de l'échéance d'abord. */
+  const lots = useMemo<OpenLot[]>(
+    () => all.filter(l => lotIsOpen({ ...l, status: 'open' }, now)).map(l => ({ ...l, mine: mine[l.id] ?? 0 })).sort((a, b) => a.expiresAt - b.expiresAt),
+    [all, mine, now],
+  );
+  const lotOf = useMemo(() => new Map(lots.map(l => [l.productId, l])), [lots]);
+
+  /** Réserve des pièces dans le lot de l'article (ou l'ouvre), livrées à l'adresse choisie. */
+  const reserve = useCallback((productId: string, lines: { variant: string; qty: number }[]) => {
+    if (!isDeliverable(address)) throw new Error('Adresse de livraison manquante.');
+    return joinLot({
+      productId, lines, phone: user?.phoneNumber ?? undefined,
+      address: { name: address.name, phone: address.phone, line: address.line, landmark: address.landmark, commune: address.commune },
+    });
+  }, [address, user]);
+
+  return useMemo(() => ({ lots, lotOf, now, reserve, leave: leaveLot }), [lots, lotOf, now, reserve]);
+}
+
+const [LotsProvider, useLots] = createStore('useLots', useLotsState);
+export { useLots };
+
 /* ---------- Point d'entrée ---------- */
 
 export function AppProvider({ children }: { children: React.ReactNode }) {
@@ -359,7 +413,9 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
         <HistoryProvider>
           <AddressesProvider>
             <CartProvider>
-              <OrdersProvider>{children}</OrdersProvider>
+              <OrdersProvider>
+                <LotsProvider>{children}</LotsProvider>
+              </OrdersProvider>
             </CartProvider>
           </AddressesProvider>
         </HistoryProvider>

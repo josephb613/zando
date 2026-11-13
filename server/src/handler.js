@@ -4,6 +4,8 @@
  *   POST /createOrders        { groups, commune, shipIndex, payMethod, address?, phone? }
  *   POST /updateOrderPayment  { refs, payMethod, phone? }
  *   POST /updateOrderStatus   { ref, status }                 (rôle admin)
+ *   POST /joinLot             { productId, lines, address, phone? }   (lot groupé : réserver ou ouvrir)
+ *   POST /leaveLot            { lotId }
  *   POST /nyoleWebhook        événement nyole signé            (adresse à saisir dans nyole, API et journaux)
  *   GET  /health
  *
@@ -11,6 +13,7 @@
  * Réponse : `{ data }` en cas de succès, `{ error: { code, message } }` sinon.
  */
 const orders = require('./orders');
+const lots = require('./lots');
 const nyole = require('./nyole');
 
 const { ApiError } = orders;
@@ -107,7 +110,7 @@ function createHandler(deps) {
 
       if (name === 'nyoleWebhook') return send(res, 200, { data: await nyoleWebhook(req, getDeps().db()) });
 
-      const action = { createOrders: 1, updateOrderPayment: 1, updateOrderStatus: 1 }[name] ? name : null;
+      const action = { createOrders: 1, updateOrderPayment: 1, updateOrderStatus: 1, joinLot: 1, leaveLot: 1 }[name] ? name : null;
       if (!action) throw new ApiError('not-found', 'Action inconnue.');
 
       let body;
@@ -125,7 +128,7 @@ function createHandler(deps) {
 
       const data = action === 'updateOrderStatus'
         ? await orders.updateOrderStatus(db(), token, body)
-        : await orders[action](db(), token.uid, body);
+        : await (lots[action] || orders[action])(db(), token.uid, body);
       return send(res, 200, { data });
     } catch (e) {
       if (e instanceof ApiError) return send(res, STATUS[e.code] || 400, { error: { code: e.code, message: e.message } });

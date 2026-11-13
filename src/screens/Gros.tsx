@@ -7,9 +7,9 @@ import { C, T, W } from '../theme';
 import { Img, Appear, Tap as Pressable, OriginTag, useProgressive } from '../ui';
 import { SkeletonLotCard } from '../skeleton';
 import { useNav, useOpenProduct, useRequireAuth } from '../nav';
-import { useCatalog } from '../store';
+import { OpenLot, useCatalog, useLots } from '../store';
 import type { CatItem } from '../catalog';
-import { money } from '../format';
+import { money, plural, timeLeft } from '../format';
 import { SearchIcon } from '../icons';
 
 /** Gain du meilleur palier par rapport au prix à l'unité (0 à 1). */
@@ -57,6 +57,29 @@ function Featured({ p, onOpen, onOrder }: { p: CatItem; onOpen: () => void; onOr
         </Pressable>
       </View>
     </View>
+  );
+}
+
+/** Lot groupé en cours : photo, prix du lot, avancement et échéance ; ouvre la fiche de l'article. */
+function GroupLot({ p, lot, now, onOpen }: { p: CatItem; lot: OpenLot; now: number; onOpen: () => void }) {
+  const left = lot.target - lot.taken;
+  return (
+    <Pressable onPress={onOpen} accessibilityLabel={`Lot groupé : ${p.n}, ${plural(left, 'pièce')} à réserver`} style={{ width: 236, flexDirection: 'row', gap: 10, padding: 8, borderRadius: 12, backgroundColor: C.white }}>
+      <View style={{ width: 76, height: 76, borderRadius: 8, overflow: 'hidden', backgroundColor: C.bg }}>
+        <Img uri={p.b} style={{ width: '100%', height: '100%' }} />
+      </View>
+      <View style={{ flex: 1, minWidth: 0, gap: 4 }}>
+        <T numberOfLines={1} style={{ fontSize: 13 }}>{p.n}</T>
+        <View style={{ flexDirection: 'row', alignItems: 'baseline', gap: 4 }}>
+          <T w={700} style={{ fontSize: 16 }}>{money(lot.unit)}</T>
+          <T style={{ fontSize: 11, color: C.grey4 }}>/pièce</T>
+        </View>
+        <View style={{ height: 6, borderRadius: 999, backgroundColor: C.line, overflow: 'hidden' }}>
+          <View style={{ height: 6, borderRadius: 999, backgroundImage: GOLD, width: `${Math.round((lot.taken / lot.target) * 100)}%` }} />
+        </View>
+        <T numberOfLines={1} style={{ fontSize: 11, color: C.grey }}>{`${lot.mine > 0 ? `${lot.mine} pour vous · ` : ''}reste ${left} · ${timeLeft(lot.expiresAt, now)}`}</T>
+      </View>
+    </Pressable>
   );
 }
 
@@ -120,7 +143,8 @@ export default function Gros() {
   const requireAuth = useRequireAuth();
   const [filter, setFilter] = useState<Filter>('all');
   const shine = useState(() => new Animated.Value(0))[0];
-  const { products, catalogReady } = useCatalog();
+  const { products, byKey, catalogReady } = useCatalog();
+  const { lots: openLots, now } = useLots();
   const ready = catalogReady;
 
   // Reflet `lotShine` (3,2 s : immobile jusqu'à 60 %, traverse le bouton jusqu'à 90 %).
@@ -144,6 +168,10 @@ export default function Gros() {
     if (filter === 'small') return lotCost(p) < 100;
     return true;
   });
+  const groupLots = openLots.flatMap(l => {
+    const p = byKey.get(l.productId);
+    return p ? [{ l, p }] : [];
+  });
   const more = useProgressive(filter);
   const cardW = (SW - 10 - 6) / 2;
   const order = (p: CatItem) => requireAuth(`Produit:${p.k}`, () => nav.navigate('Variantes', { id: p.k, buy: true }));
@@ -165,6 +193,15 @@ export default function Gros() {
         {ready && featured && (
           <View style={{ backgroundColor: C.night, paddingTop: 4, paddingHorizontal: 10, paddingBottom: 14 }}>
             <Featured p={featured} onOpen={() => open(featured.k)} onOrder={() => order(featured)} />
+          </View>
+        )}
+
+        {ready && groupLots.length > 0 && (
+          <View style={{ gap: 8, paddingTop: 4 }}>
+            <T w={700} accessibilityRole="header" style={{ paddingHorizontal: 12, fontSize: 16 }}>Lots groupés en cours</T>
+            <ScrollView horizontal showsHorizontalScrollIndicator={false} contentContainerStyle={{ gap: 8, paddingHorizontal: 12 }}>
+              {groupLots.map(({ l, p }) => <GroupLot key={l.id} p={p} lot={l} now={now} onOpen={() => open(p.k)} />)}
+            </ScrollView>
           </View>
         )}
 

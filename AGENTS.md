@@ -41,7 +41,7 @@ Run lint, typecheck and shared:check before declaring any task done.
 - `src/shared/` : règles métier communes à l'app et au module de commandes `server/` (livraison, prix par palier, paiements, statuts). Aucun import React Native ici. Après modification : `npm run shared:sync` (génère `server/src/shared/`, ne jamais l'éditer à la main) ; `npm run shared:check` vérifie la copie.
 - `src/ui/` : composants réutilisables (animations, en-tête, feuille du bas, formes, carte produit `ProductCard`). `src/icons.tsx` : icônes communes. Un écran n'importe jamais les pièces d'un autre écran ; les fichiers `*.parts.tsx` ne servent qu'à leur écran.
 - Couleurs : toujours via `C` (`src/theme.tsx`) ; ajouter un jeton plutôt qu'un code hexadécimal répété.
-- `src/store.tsx` : état de l'app en fournisseurs séparés (`useAuth`, `useCatalog`, `useHistory`, `useAddresses`, `useCart`, `useOrders`). Le panier n'enregistre que `{ k, variant, qty, selected }` : nom, photo, provenance et prix sont relus dans le catalogue. La commune de livraison est celle de l'adresse choisie, sinon la zone du profil.
+- `src/store.tsx` : état de l'app en fournisseurs séparés (`useAuth`, `useCatalog`, `useHistory`, `useAddresses`, `useCart`, `useOrders`, `useLots`). Le panier n'enregistre que `{ k, variant, qty, selected }` : nom, photo, provenance et prix sont relus dans le catalogue. La commune de livraison est celle de l'adresse choisie, sinon la zone du profil.
 - Aucune donnée inventée à l'écran : avis, stocks, délais, minuteurs, livreurs ou bons doivent venir de Firestore ou du serveur. Une fonction sans donnée ni service derrière n'est pas affichée.
 
 ## Scripts d'administration (`scripts/`, session `npx firebase-tools login`)

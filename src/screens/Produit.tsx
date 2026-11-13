@@ -6,11 +6,13 @@ import { C, T } from '../theme';
 import { Img, Tap as Pressable, ProductCard } from '../ui';
 import { SkeletonProduit } from '../skeleton';
 import { RootParams, useNav, useOpenProduct } from '../nav';
-import { useCart, useCatalog, useHistory } from '../store';
+import { useCart, useCatalog, useHistory, useLots } from '../store';
 import { CatItem, RAYON_LABEL, SIZES, currentPrice, isPromoActive, promoPercent } from '../catalog';
 import { ORIGIN } from '../delivery';
 import { hotColor, money, soldLabel } from '../format';
 import { BackIcon, Icon, PinIcon, PlaneIcon } from '../icons';
+import { lotTier } from '../shared/lots';
+import { LotBlock } from './Produit.parts';
 
 /** Paliers de prix : [quantité min, prix unitaire, tranche « 1 à 5 pièces », « 6 à 29 », « 30 et + »]. */
 function tiersOf(p: CatItem): [number, number, string][] {
@@ -38,6 +40,7 @@ export default function Produit() {
   const { products, byKey, catalogReady } = useCatalog();
   const { itemCount } = useCart();
   const { addViewed } = useHistory();
+  const { lotOf, now, leave } = useLots();
   const ready = catalogReady;
   const p = byKey.get(route.params.id);
 
@@ -84,6 +87,8 @@ export default function Produit() {
   const sizes = SIZES[p.kd];
   const cardW = (W - 12 - 6) / 2;
   const choose = (buy: boolean) => nav.navigate('Variantes', { id: p.k, buy });
+  const lot = lotOf.get(p.k);
+  const tier = lotTier(p.t);
 
   return (
     <View style={{ flex: 1, backgroundColor: C.bg }}>
@@ -137,6 +142,13 @@ export default function Produit() {
             </View>
             {!!sizes && <T style={{ fontSize: 13, color: C.grey }}>{sizes.label === 'Taille' ? 'Toutes tailles confondues.' : 'Toutes pointures confondues.'}</T>}
           </View>
+        )}
+
+        {(lot || tier) && (
+          <LotBlock
+            lot={lot} target={lot?.target ?? tier?.[0] ?? 0} unit={lot?.unit ?? tier?.[1] ?? price} retail={price} now={now}
+            onReserve={() => nav.navigate('Variantes', { id: p.k, lot: true })} onLeave={leave}
+          />
         )}
 
         {similar.length > 0 && (
