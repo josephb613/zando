@@ -4,12 +4,14 @@
  *   POST /createOrders        { groups, commune, shipIndex, payMethod, address?, phone? }
  *   POST /updateOrderPayment  { refs, payMethod, phone? }
  *   POST /updateOrderStatus   { ref, status }                 (rôle admin)
+ *   POST /nyoleWebhook        événement nyole signé            (adresse à saisir dans nyole, API et journaux)
  *   GET  /health
  *
  * L'app envoie son jeton Firebase dans `Authorization: Bearer <jeton>`.
  * Réponse : `{ data }` en cas de succès, `{ error: { code, message } }` sinon.
  */
 const orders = require('./orders');
+const nyole = require('./nyole');
 
 const { ApiError } = orders;
 const MAX_BODY = 100 * 1024;
@@ -32,12 +34,13 @@ function send(res, status, body) {
   res.end(body === undefined ? '' : JSON.stringify(body));
 }
 
-async function readBody(req) {
-  // Certains hébergeurs (Vercel) ont déjà lu et décodé le corps.
+/** Corps brut en texte, ou `null` si l'hébergeur l'a déjà décodé en objet. */
+async function readText(req) {
+  // Certains hébergeurs (Vercel) ont déjà lu le corps.
   if (req.body !== undefined) {
-    if (typeof req.body === 'string') return req.body ? JSON.parse(req.body) : {};
-    if (Buffer.isBuffer(req.body)) return req.body.length ? JSON.parse(req.body.toString('utf8')) : {};
-    return req.body || {};
+    if (typeof req.body === 'string') return req.body;
+    if (Buffer.isBuffer(req.body)) return req.body.toString('utf8');
+    return null;
   }
   // Lit tout le corps ; au-delà de MAX_BODY on continue de le lire sans le garder,
   // pour que la réponse 413 parvienne au client au lieu d'une connexion coupée.
@@ -53,8 +56,32 @@ async function readBody(req) {
     req.on('error', reject);
   });
   if (!chunks) throw new ApiError('payload-too-large', 'Requête trop volumineuse.');
-  const text = Buffer.concat(chunks).toString('utf8');
+  return Buffer.concat(chunks).toString('utf8');
+}
+
+async function readBody(req) {
+  const text = await readText(req);
+  if (text === null) return req.body || {};
   return text ? JSON.parse(text) : {};
+}
+
+/**
+ * Webhook nyole : non authentifié par jeton Firebase, mais par la signature HMAC du corps brut.
+ * Une clé de test ne valide que des événements `livemode: false`, une clé de production que des `livemode: true`.
+ */
+async function nyoleWebhook(req, db) {
+  const raw = await readText(req);
+  if (raw === null) throw new ApiError('invalid-argument', 'Corps brut indisponible.');
+  const secret = nyole.secretKey();
+  if (!nyole.verifySignature(raw, req.headers, secret)) throw new ApiError('unauthenticated', 'Signature invalide.');
+  let event;
+  try {
+    event = JSON.parse(raw);
+  } catch {
+    throw new ApiError('invalid-argument', 'Corps JSON invalide.');
+  }
+  if (event.livemode !== secret.startsWith('af_live_')) return { ignored: true };
+  return orders.handleNyoleWebhook(db, event);
 }
 
 /**
@@ -77,6 +104,8 @@ function createHandler(deps) {
         return send(res, 200, { data: { ok: true } });
       }
       if (req.method !== 'POST') throw new ApiError('method-not-allowed', 'Méthode non autorisée.');
+
+      if (name === 'nyoleWebhook') return send(res, 200, { data: await nyoleWebhook(req, getDeps().db()) });
 
       const action = { createOrders: 1, updateOrderPayment: 1, updateOrderStatus: 1 }[name] ? name : null;
       if (!action) throw new ApiError('not-found', 'Action inconnue.');

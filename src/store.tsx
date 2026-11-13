@@ -291,7 +291,7 @@ export { useCart };
 /** Commande qui vient d'être passée, affichée par l'écran Confirmation. */
 export interface LastOrder {
   refs: string[]; total: number; count: number; savings: number; items: CartItem[];
-  address: Address; payMethod: PayMethod; payPhone: string;
+  address: Address; payMethod: PayMethod; payPhone: string; payUrl?: string;
 }
 
 function useOrdersState() {
@@ -341,7 +341,7 @@ function useOrdersState() {
     setLastOrder({ ...created, savings: totals.savings, items: picked, address, payMethod, payPhone: mobile ? payPhone.trim() : '' });
     // La commande est créée : les articles commandés quittent le panier.
     remove(picked.map(it => it.id));
-    return created.refs;
+    return created;
   }, [uid, items, address, shipIndex, payMethod, payPhone, totals.savings, remove]);
 
   return useMemo(() => ({ orders, ordersReady, lastOrder, placeOrder }), [orders, ordersReady, lastOrder, placeOrder]);

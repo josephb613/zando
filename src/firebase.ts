@@ -278,6 +278,8 @@ export interface CreatedOrders {
   refs: string[];
   total: number;
   count: number;
+  /** Page de paiement Mobile Money (nyole) ; absente pour le paiement à la livraison ou si le service est indisponible. */
+  payUrl?: string;
 }
 
 /**

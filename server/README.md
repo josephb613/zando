@@ -8,6 +8,7 @@ utilisable sur l'offre gratuite Spark via l'Admin SDK.
 | `POST /createOrders` | `{ groups, commune, shipIndex, payMethod, address?, phone? }` | client connecté |
 | `POST /updateOrderPayment` | `{ refs, payMethod, phone? }` | client connecté |
 | `POST /updateOrderStatus` | `{ ref, status }` | admin (`node scripts/set-admin.cjs +243…`) |
+| `POST /nyoleWebhook` | événement nyole signé | nyole (signature HMAC, pas de jeton Firebase) |
 | `GET /health` | | tout le monde |
 
 L'app envoie son jeton Firebase dans `Authorization: Bearer <jeton>`.
@@ -20,6 +21,17 @@ Ne jamais committer ce fichier ni l'envoyer dans l'app.
 
 - En local : `GOOGLE_APPLICATION_CREDENTIALS=/chemin/cle.json`
 - Chez l'hébergeur : variable `FIREBASE_SERVICE_ACCOUNT` = contenu JSON de la clé (ou ce JSON en base64)
+
+## Paiement Mobile Money (nyole)
+
+`createOrders` crée une session nyole pour les paiements mobiles et renvoie `payUrl` (l'app l'ouvre). Une commande passe de
+`pending_payment` à `sourcing` uniquement sur le webhook signé `payment.completed`, si montant et devise correspondent.
+Sans `NYOLE_SECRET_KEY`, aucune session n'est créée et la commande reste en attente de paiement.
+
+- `NYOLE_SECRET_KEY` : clé secrète de `app.nyole.com/developer` (`af_test_sec_…` pour tester, `af_live_sec_…` en production).
+- `NYOLE_API_URL` : facultatif, `https://app.nyole.com/api` par défaut.
+- Webhook à enregistrer dans « API et journaux » (adresse de test ou de production) : `https://<hôte>/nyoleWebhook`
+  (Vercel : `https://<projet>.vercel.app/api/nyoleWebhook`). Une clé de test ne valide que des événements `livemode: false`.
 
 ## Lancer
 

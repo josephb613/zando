@@ -1,5 +1,5 @@
 import React from 'react';
-import { Animated, ScrollView, View } from 'react-native';
+import { Animated, Linking, ScrollView, View } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { C, T } from '../theme';
 import { Tap as Pressable, Thumb, usePopIn } from '../ui';
@@ -28,7 +28,7 @@ export default function Confirmation() {
     );
   }
 
-  const { refs, total, count, savings, items, address, payMethod, payPhone } = lastOrder;
+  const { refs, total, count, savings, items, address, payMethod, payPhone, payUrl } = lastOrder;
   const cash = payMethod === CASH;
   const origins = (['kin', 'cn'] as const).filter(o => items.some(it => it.p?.o === o));
 
@@ -72,13 +72,20 @@ export default function Confirmation() {
         </View>
       </ScrollView>
 
-      <View style={{ flexDirection: 'row', gap: 8, paddingTop: 12, paddingHorizontal: 14, paddingBottom: 16 + insets.bottom, backgroundColor: C.white, borderTopWidth: 1, borderTopColor: C.line }}>
+      <View style={{ gap: 8, paddingTop: 12, paddingHorizontal: 14, paddingBottom: 16 + insets.bottom, backgroundColor: C.white, borderTopWidth: 1, borderTopColor: C.line }}>
+        {!!payUrl && (
+          <Pressable onPress={() => Linking.openURL(payUrl).catch(() => {})} style={{ height: 50, alignItems: 'center', justifyContent: 'center', borderRadius: 999, backgroundColor: C.red }}>
+            <T w={700} style={{ fontSize: 15, color: C.white }}>{`Payer ${money(total)}`}</T>
+          </Pressable>
+        )}
+        <View style={{ flexDirection: 'row', gap: 8 }}>
         <Pressable onPress={home} style={{ flex: 1, height: 50, alignItems: 'center', justifyContent: 'center', borderRadius: 999, borderWidth: 2, borderColor: C.ink }}>
           <T w={600} style={{ fontSize: 15 }}>Continuer</T>
         </Pressable>
         <Pressable onPress={() => (refs.length === 1 ? nav.replace('Commande', { ref: refs[0] }) : nav.replace('Commandes'))} style={{ flex: 1, height: 50, alignItems: 'center', justifyContent: 'center', borderRadius: 999, backgroundColor: C.red }}>
           <T w={700} style={{ fontSize: 15, color: C.white }}>{refs.length === 1 ? 'Suivre la commande' : 'Mes commandes'}</T>
         </Pressable>
+        </View>
       </View>
     </View>
   );

@@ -1,5 +1,5 @@
 import React, { useRef, useState } from 'react';
-import { ActivityIndicator, ScrollView, TextInput, View } from 'react-native';
+import { ActivityIndicator, Linking, ScrollView, TextInput, View } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { C, Illus, T } from '../theme';
 import { Header, Radio, Tap as Pressable, DashLine, Thumb } from '../ui';
@@ -41,7 +41,8 @@ export default function Paiement() {
     setBusy(true);
     setError('');
     try {
-      await placeOrder();
+      const created = await placeOrder();
+      if (created.payUrl) Linking.openURL(created.payUrl).catch(() => {});
       nav.reset({ index: 1, routes: [{ name: 'Tabs' }, { name: 'Confirmation' }] });
     } catch (e) {
       // Erreurs métier du serveur (produit indisponible, commune non desservie…) : message tel quel.

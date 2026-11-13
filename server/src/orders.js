@@ -6,6 +6,7 @@
  * Les règles Firestore interdisent toute écriture directe de commande côté client.
  */
 const { FieldValue } = require('firebase-admin/firestore');
+const nyole = require('./nyole');
 const { isKnownCommune, shipPrice } = require('./shared/delivery');
 const { MAX_QTY, basePrice, normalizeTiers, priceForQty } = require('./shared/pricing');
 const {
@@ -27,6 +28,71 @@ function unitPrice(product, qty) {
 
 function text(value, max = 200) {
   return String(value ?? '').trim().slice(0, max);
+}
+
+const PAY_CURRENCY = 'USD';
+const cents = n => Math.round(n * 100) / 100;
+
+/**
+ * Lance le paiement Mobile Money des commandes `docRefs` (références Firestore) chez nyole.
+ * Renvoie `{ payUrl }`, ou `{}` si nyole n'est pas configuré ou refuse : la commande reste alors
+ * « en attente de paiement » et l'app garde son comportement d'avant.
+ */
+async function startPayment(docRefs, refs, total, phone, idempotencyKey) {
+  if (!nyole.enabled()) return {};
+  try {
+    const session = await nyole.createSession({
+      amount: cents(total),
+      currency: PAY_CURRENCY,
+      phone: nyole.internationalPhone(phone),
+      description: `Sokoni · ${refs.join(' + ')}`,
+      metadata: { order_id: refs[0], refs: refs.join(',') },
+      idempotencyKey,
+    });
+    await Promise.all(docRefs.map(ref => ref.update({
+      nyoleSession: session.id, nyoleAmount: cents(total), nyoleCurrency: PAY_CURRENCY,
+    })));
+    return { payUrl: session.url };
+  } catch (e) {
+    console.error('[nyole] session non créée', refs.join(','), e.message);
+    return {};
+  }
+}
+
+/**
+ * Webhook nyole. Le corps est déjà authentifié par sa signature (voir handler.js).
+ * Seul `payment.completed` fait avancer une commande, et seulement si montant et devise correspondent.
+ * Idempotent : une commande qui n'attend plus de paiement n'est pas touchée.
+ */
+async function handleNyoleWebhook(db, event) {
+  if (!event || event.event !== 'payment.completed' || event.data?.status !== 'SUCCESS') return { ignored: true };
+  const data = event.data;
+  const snap = await db.collection('orders').where('nyoleSession', '==', String(data.id || '')).get();
+  if (snap.empty) return { ignored: true };
+
+  const expected = cents(snap.docs.reduce((n, d) => n + (Number(d.data().total) || 0), 0));
+  const currency = snap.docs[0].data().nyoleCurrency;
+  if (cents(Number(data.amount)) !== expected || data.currency !== currency) {
+    console.error('[nyole] montant ou devise inattendus', data.id, data.amount, data.currency, 'attendu', expected, currency);
+    return { ignored: true };
+  }
+
+  const batch = db.batch();
+  let confirmed = 0;
+  for (const doc of snap.docs) {
+    if (doc.data().status !== 'pending_payment') continue;
+    confirmed += 1;
+    batch.update(doc.ref, {
+      status: 'sourcing',
+      statusLabel: CONFIRMED_LABEL,
+      detail: STATUS_DETAILS.sourcing,
+      progress: STATUS_PROGRESS.sourcing,
+      paidAt: FieldValue.serverTimestamp(),
+      payRef: text(data.provider_reference, 120),
+    });
+  }
+  if (confirmed) await batch.commit();
+  return { confirmed };
 }
 
 /** Crée une ou deux commandes (Kinshasa / Chine) pour l'utilisateur `uid`. */
@@ -140,6 +206,7 @@ async function createOrders(db, uid, data = {}) {
   let countAll = 0;
   const cash = payMethod === CASH;
   const status = cash ? 'sourcing' : 'pending_payment';
+  const docRefs = [];
 
   computed.forEach((c, index) => {
     const groupShip = index === 0 ? ship : 0;
@@ -147,7 +214,9 @@ async function createOrders(db, uid, data = {}) {
     totalAll += total;
     countAll += c.count;
 
-    batch.set(db.collection('orders').doc(), {
+    const docRef = db.collection('orders').doc();
+    docRefs.push(docRef);
+    batch.set(docRef, {
       uid,
       ref: refs[index],
       kin: c.kin,
@@ -169,7 +238,9 @@ async function createOrders(db, uid, data = {}) {
   });
 
   await batch.commit();
-  return { refs, total: Math.round(totalAll * 100) / 100, count: countAll };
+  const total = Math.round(totalAll * 100) / 100;
+  const pay = cash ? {} : await startPayment(docRefs, refs, total, payPhone, `sokoni-${refs.join('+')}`);
+  return { refs, total, count: countAll, ...pay };
 }
 
 /**
@@ -214,7 +285,11 @@ async function updateOrderPayment(db, uid, data = {}) {
     });
   }
   await batch.commit();
-  return { ok: true };
+  if (cash) return { ok: true };
+  // Nouvelle session à chaque essai : l'ancienne a pu être annulée ou expirer.
+  const total = snap.docs.reduce((n, d) => n + (Number(d.data().total) || 0), 0);
+  const pay = await startPayment(snap.docs.map(d => d.ref), refs, total, payPhone, `sokoni-${refs.join('+')}-${Date.now()}`);
+  return { ok: true, ...pay };
 }
 
 /** Fait avancer le statut d'une commande (back-office, rôle admin requis). */
@@ -241,4 +316,4 @@ async function updateOrderStatus(db, claims, data = {}) {
   return { ok: true };
 }
 
-module.exports = { ApiError, createOrders, updateOrderPayment, updateOrderStatus };
+module.exports = { ApiError, createOrders, updateOrderPayment, updateOrderStatus, handleNyoleWebhook };
