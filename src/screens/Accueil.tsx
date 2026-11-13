@@ -4,18 +4,26 @@ import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { C, T } from '../theme';
 import { Appear, Tap as Pressable, ProductCard, useProgressive } from '../ui';
 import { SkeletonProductCard } from '../skeleton';
-import { useNav, useOpenProduct } from '../nav';
-import { useCatalog } from '../store';
-import { rayonsOf } from '../catalog';
+import { useNav, useOpenProduct, useRequireAuth } from '../nav';
+import { useCatalog, useHistory, useLots } from '../store';
+import { CatItem, currentPrice, isPromoActive, promoPercent, rayonsOf } from '../catalog';
+import { money, plural } from '../format';
 import { Icon, SearchIcon } from '../icons';
-import { Shortcut, ShortcutKind } from './Accueil.parts';
+import { Shortcut, ShortcutKind, Strip, StripItem } from './Accueil.parts';
 
-/** Raccourcis sous l'en-tête : promos en cours, articles les moins chers, meilleures ventes. */
+/** Raccourcis sous l'en-tête : promos en cours, articles les moins chers, meilleures ventes, prix de gros, suivi des commandes. */
 const SHORTCUTS: { kind: ShortcutKind; label: string }[] = [
   { kind: 'promo', label: 'Promos' },
   { kind: 'petitsPrix', label: 'Petits prix' },
-  { kind: 'ventes', label: 'Meilleures ventes' },
+  { kind: 'ventes', label: 'Top ventes' },
+  { kind: 'gros', label: 'Prix de gros' },
+  { kind: 'commandes', label: 'Commandes' },
 ];
+
+/** Nombre de vignettes par bandeau. */
+const STRIP = 10;
+/** Gain du meilleur palier de gros par rapport au prix à l'unité (0 à 1). */
+const grosGain = (p: CatItem) => 1 - p.t[p.t.length - 1][1] / p.t[0][1];
 
 export default function Accueil() {
   const insets = useSafeAreaInsets();
@@ -28,10 +36,25 @@ export default function Accueil() {
   const rayons = useMemo(() => rayonsOf(products), [products]);
   const all = useMemo(() => products.filter(p => !tab || p.c === tab), [products, tab]);
   const more = useProgressive(tab);
+  const requireAuth = useRequireAuth();
+  const { viewed } = useHistory();
+  const { lots: openLots } = useLots();
+
+  // Bandeaux du rayon affiché : plus fortes remises, puis plus gros écarts entre l'unité et le lot.
+  const promos = useMemo(() => all.filter(isPromoActive).sort((a, b) => promoPercent(b) - promoPercent(a)).slice(0, STRIP), [all]);
+  const lots = useMemo(() => all.filter(p => p.t.length >= 2 && grosGain(p) > 0).sort((a, b) => grosGain(b) - grosGain(a)).slice(0, STRIP), [all]);
+  // Lots groupés en cours du rayon affiché, avec leur article.
+  const groupLots = useMemo(() => openLots.flatMap(l => {
+    const p = all.find(x => x.k === l.productId);
+    return p ? [{ l, p }] : [];
+  }).slice(0, STRIP), [openLots, all]);
+  const recent = useMemo(() => (tab ? [] : viewed.map(k => products.find(p => p.k === k)).filter((p): p is CatItem => !!p)), [tab, viewed, products]);
   const cardW = (W - 8 - 5) / 2;
 
   const go = (kind: ShortcutKind) => {
     if (kind === 'promo') nav.popTo('Tabs', { screen: 'Promos' });
+    else if (kind === 'gros') requireAuth('Gros', () => nav.popTo('Tabs', { screen: 'Gros' }));
+    else if (kind === 'commandes') requireAuth('Compte', () => nav.navigate('Commandes'));
     else nav.navigate('Resultats', { sort: kind === 'petitsPrix' ? 'asc' : 'sales' });
   };
 
@@ -67,14 +90,38 @@ export default function Accueil() {
       </View>
 
       <ScrollView style={{ flex: 1 }} showsVerticalScrollIndicator={false} onScroll={more.onScroll} scrollEventThrottle={more.scrollEventThrottle} contentContainerStyle={{ gap: 8, paddingBottom: 14 }}>
-        <View style={{ backgroundColor: C.white, paddingTop: 12, paddingHorizontal: 4, paddingBottom: 8, flexDirection: 'row', gap: 4 }}>
+        <View style={{ backgroundColor: C.white, paddingTop: 12, paddingHorizontal: 2, paddingBottom: 8, flexDirection: 'row' }}>
           {SHORTCUTS.map((s, i) => (
             <Pressable key={s.kind} onPress={() => go(s.kind)} style={{ flex: 1, minWidth: 0, alignItems: 'center', gap: 4 }}>
               <Shortcut kind={s.kind} i={i} />
-              <T style={{ fontSize: 12, color: C.greyIcon, textAlign: 'center', lineHeight: 15 }} numberOfLines={1}>{s.label}</T>
+              <T style={{ fontSize: 12, color: C.greyIcon, textAlign: 'center', lineHeight: 15 }} numberOfLines={1} adjustsFontSizeToFit minimumFontScale={0.85}>{s.label}</T>
             </Pressable>
           ))}
         </View>
+
+        {ready && promos.length > 0 && (
+          <Strip title="En promo" onMore={() => nav.popTo('Tabs', { screen: 'Promos' })}>
+            {promos.map(p => <StripItem key={p.k} item={p} price={currentPrice(p)} badge={`−${promoPercent(p)} %`} note={p.pr && money(p.pr[1])} strike onPress={() => open(p.k)} />)}
+          </Strip>
+        )}
+        {ready && groupLots.length > 0 && (
+          <Strip title="Lots groupés" onMore={() => go('gros')}>
+            {groupLots.map(({ l, p }) => <StripItem key={l.id} item={p} price={l.unit} note={`${plural(l.target - l.taken, 'pièce')} à réserver`} onPress={() => open(p.k)} />)}
+          </Strip>
+        )}
+        {ready && lots.length > 0 && (
+          <Strip title="Prix de gros" onMore={() => go('gros')}>
+            {lots.map(p => {
+              const [min, price] = p.t[p.t.length - 1];
+              return <StripItem key={p.k} item={p} price={price} note={`dès ${min} pièces`} onPress={() => open(p.k)} />;
+            })}
+          </Strip>
+        )}
+        {ready && recent.length > 0 && (
+          <Strip title="Vus récemment">
+            {recent.map(p => <StripItem key={p.k} item={p} price={currentPrice(p)} onPress={() => open(p.k)} />)}
+          </Strip>
+        )}
 
         <View style={{ paddingHorizontal: 4, flexDirection: 'row', flexWrap: 'wrap', gap: 5 }}>
           {ready

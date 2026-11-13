@@ -1,13 +1,15 @@
 import React, { useEffect, useState } from 'react';
-import { Animated, Easing, View } from 'react-native';
+import { Animated, Easing, ScrollView, View } from 'react-native';
 import { Image } from 'expo-image';
-import { C } from '../theme';
-import { useAnimate } from '../ui';
+import { C, T } from '../theme';
+import { Img, Price, Tap, useAnimate } from '../ui';
+import { Chevron } from '../icons';
+import type { CatItem } from '../catalog';
 
 // Icônes 3D animées des raccourcis de l'accueil (assets/icons3d) ; elles s'arrêtent hors écran
 // et quand « Réduire les animations » est actif. `i` décale le départ de chaque icône.
 
-export type ShortcutKind = 'promo' | 'petitsPrix' | 'ventes';
+export type ShortcutKind = 'promo' | 'petitsPrix' | 'ventes' | 'gros' | 'commandes';
 
 const SIZE = 52;
 
@@ -58,9 +60,13 @@ function Eclair({ i }: { i: number }) {
   );
 }
 
-// ---------- Étiquette (Petits prix) qui se balance, trophée (Meilleures ventes) qui flotte ----------
+// ---------- Étiquette (Petits prix) qui se balance ; trophée, cartons et camion qui flottent ----------
 const TAG = require('../../assets/icons3d/promo.png');
-const TROPHY = require('../../assets/icons3d/trophee.png');
+const FLOATING = {
+  ventes: require('../../assets/icons3d/trophee.png'),
+  gros: require('../../assets/icons3d/cartons.png'),
+  commandes: require('../../assets/icons3d/camion.png'),
+};
 const sine = Easing.inOut(Easing.sin);
 
 function Tag({ i }: { i: number }) {
@@ -73,12 +79,12 @@ function Tag({ i }: { i: number }) {
   );
 }
 
-function Trophy({ i }: { i: number }) {
+function Float({ kind, i }: { kind: keyof typeof FLOATING; i: number }) {
   const v = useLoop(2400, i * 260, sine);
   return (
     <Animated.View style={{ width: SIZE, height: SIZE, marginVertical: -2,
       transform: [{ translateY: v.interpolate({ inputRange: [0, 0.5, 1], outputRange: [0, -3, 0] }) }, { scale: v.interpolate({ inputRange: [0, 0.5, 1], outputRange: [1, 1.05, 1] }) }] }}>
-      <Image source={TROPHY} style={{ width: SIZE, height: SIZE }} contentFit="contain" />
+      <Image source={FLOATING[kind]} style={{ width: SIZE, height: SIZE }} contentFit="contain" />
     </Animated.View>
   );
 }
@@ -86,5 +92,48 @@ function Trophy({ i }: { i: number }) {
 export function Shortcut({ kind, i }: { kind: ShortcutKind; i: number }) {
   if (kind === 'promo') return <Eclair i={i} />;
   if (kind === 'petitsPrix') return <Tag i={i} />;
-  return <Trophy i={i} />;
+  return <Float kind={kind} i={i} />;
+}
+
+// ---------- Bandeaux d'articles défilants (promos, prix de gros, vus récemment) ----------
+const THUMB = 104;
+
+/** Bandeau blanc : titre, lien « Tout voir » si `onMore`, puis une rangée défilante de vignettes. */
+export function Strip({ title, onMore, children }: { title: string; onMore?: () => void; children: React.ReactNode }) {
+  return (
+    <View style={{ backgroundColor: C.white, paddingTop: 4, paddingBottom: 10 }}>
+      <View style={{ flexDirection: 'row', alignItems: 'center', minHeight: 40, paddingLeft: 12, paddingRight: 6 }}>
+        <T w={700} accessibilityRole="header" style={{ fontSize: 16 }}>{title}</T>
+        {!!onMore && (
+          <Tap onPress={onMore} accessibilityLabel={'Tout voir : ' + title} style={{ marginLeft: 'auto', minHeight: 40, paddingHorizontal: 6, flexDirection: 'row', alignItems: 'center', gap: 2 }}>
+            <T style={{ fontSize: 13, color: C.grey }}>Tout voir</T>
+            <Chevron size={14} />
+          </Tap>
+        )}
+      </View>
+      <ScrollView horizontal showsHorizontalScrollIndicator={false} contentContainerStyle={{ gap: 8, paddingHorizontal: 12 }}>
+        {children}
+      </ScrollView>
+    </View>
+  );
+}
+
+/** Vignette d'un bandeau : photo, remise éventuelle sur le coin, prix, puis `note` (ancien prix barré ou quantité du palier). */
+export function StripItem({ item, price, badge, note, strike = false, onPress }: {
+  item: CatItem; price: number; badge?: string; note?: string; strike?: boolean; onPress: () => void;
+}) {
+  return (
+    <Tap onPress={onPress} accessibilityLabel={item.n} style={{ width: THUMB, gap: 3 }}>
+      <View style={{ width: THUMB, height: THUMB, borderRadius: 8, overflow: 'hidden', backgroundColor: C.bg }}>
+        <Img uri={item.b} style={{ width: '100%', height: '100%' }} />
+        {!!badge && (
+          <View style={{ position: 'absolute', top: 0, left: 0, paddingHorizontal: 6, borderBottomRightRadius: 8, backgroundColor: C.red }}>
+            <T w={700} style={{ fontSize: 11, lineHeight: 18, color: C.white }}>{badge}</T>
+          </View>
+        )}
+      </View>
+      <Price value={price} sizes={[11, 17, 11]} />
+      {!!note && <T numberOfLines={1} style={{ fontSize: 11, color: C.grey4, textDecorationLine: strike ? 'line-through' : 'none' }}>{note}</T>}
+    </Tap>
+  );
 }
