@@ -4,7 +4,7 @@
   "description": "Module de commandes Sokoni : création, paiement et statut, hors Cloud Functions.",
   "main": "index.js",
   "scripts": {
-    "start": "node index.js"
+    "start": "node --env-file-if-exists=.env index.js"
   },
   "engines": {
     "node": "22.x"
