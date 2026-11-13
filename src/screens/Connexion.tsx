@@ -120,10 +120,8 @@ export default function Connexion() {
         {/* Numéro : posé directement sur le fond orange, sans carte. */}
         <Rise delay={620}>
           <View style={{ marginTop: 24, marginHorizontal: 20 }}>
-            <T w={700} style={{ fontSize: 18, lineHeight: 22, color: C.white }}>Votre numéro</T>
-
             <View style={{
-              flexDirection: 'row', alignItems: 'center', marginTop: 10, height: 50, borderRadius: 14, borderWidth: 2,
+              flexDirection: 'row', alignItems: 'center', height: 50, borderRadius: 14, borderWidth: 2,
               backgroundColor: C.white, borderColor: focus ? C.ink : C.white,
             }}>
               <Pressable onPress={() => setSheet('pays')} accessibilityLabel={'Indicatif ' + country.dial + ', changer de pays'}
