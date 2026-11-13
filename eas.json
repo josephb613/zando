@@ -1,0 +1,43 @@
+{
+  "cli": {
+    "version": ">= 16.0.0",
+    "appVersionSource": "remote"
+  },
+  "build": {
+    "development": {
+      "developmentClient": true,
+      "distribution": "internal",
+      "credentialsSource": "local",
+      "android": {
+        "buildType": "apk"
+      },
+      "env": {
+        "EXPO_PUBLIC_ORDERS_API_URL": "https://sokoni-orders-josephnyandu-8948s-projects.vercel.app/api",
+        "EXPO_PUBLIC_APP_ENV": "development"
+      }
+    },
+    "preview": {
+      "distribution": "internal",
+      "credentialsSource": "local",
+      "android": {
+        "buildType": "apk"
+      },
+      "env": {
+        "EXPO_PUBLIC_ORDERS_API_URL": "https://sokoni-orders-josephnyandu-8948s-projects.vercel.app/api",
+        "EXPO_PUBLIC_APP_ENV": "preview"
+      }
+    },
+    "production": {
+      "distribution": "store",
+      "credentialsSource": "remote",
+      "android": {
+        "buildType": "app-bundle"
+      },
+      "env": {
+        "EXPO_PUBLIC_ORDERS_API_URL": "https://sokoni-orders-josephnyandu-8948s-projects.vercel.app/api",
+        "EXPO_PUBLIC_APP_ENV": "production"
+      },
+      "autoIncrement": true
+    }
+  }
+}

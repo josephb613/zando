@@ -33,9 +33,18 @@ yarn-error.*
 # local env files
 .env*.local
 
+# EAS / Firebase local credentials (ne jamais committer)
+credentials.json
+
 # typescript
 *.tsbuildinfo
 
 # generated native folders
 /ios
 /android
+
+# secrets et fichiers locaux
+.env
+google-services.json
+.zed/
+archive/

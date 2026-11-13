@@ -15,19 +15,40 @@ Use `bunx` instead of `npx` if the project uses bun (`bun.lock` present).
 ```bash
 npx expo install <package>  # ALWAYS use instead of npm/yarn/pnpm/bun add — resolves SDK-compatible versions
 npx expo start              # start the dev server
-npx expo lint               # lint
-npx tsc --noEmit            # typecheck
+npm run lint                # lint the whole repo (app, scripts, server), zero warnings
+npm run typecheck           # tsc --noEmit
+npm run shared:check        # server/src/shared/ is up to date with src/shared/
 npx expo-doctor             # diagnose dependency and config issues
 npx expo install --fix      # fix incompatible package versions
 ```
 
-Run lint and typecheck before declaring any task done.
+Run lint, typecheck and shared:check before declaring any task done.
 
 ## Navigation & Routing
 
-- Use **Expo Router** for all navigation. Routes live in `src/app/` — every file there is a screen, `_layout.tsx` files define navigators. Keep non-route code (components, hooks, utils) outside `src/app/`.
-- Import `Link`, `router`, and `useLocalSearchParams` from `expo-router`.
-- Docs: https://docs.expo.dev/router/introduction.md
+- **Current implementation: React Navigation** (`@react-navigation/native`, `native-stack`, `bottom-tabs`).
+  - The root stack and tabs are declared in `App.tsx`.
+  - Route names and params are typed in `src/nav.ts` (`RootParams`).
+  - Screens live in `src/screens/`; shared screen pieces use the `*.parts.tsx` suffix.
+  - Use `useNav()` for typed navigation; tab screens take their params through `TabParams` (`navigate('Tabs', { screen, params })`).
+  - `useRequireAuth()` / `useOpenProduct()` gate product pages and the wholesale tab for visitors in production; `useFinishLogin()` resumes the `next` destination after sign-in.
+- **Do not introduce a second navigation system.** New screens must be added to `RootParams`, `App.tsx`, and `src/screens/index.ts`.
+- **Target for a future migration: Expo Router.** If the migration is scheduled, move routes to `src/app/`, add `_layout.tsx` files, and replace `useNav()` with `Link`, `router`, and `useLocalSearchParams`. Keep non-route code outside `src/app/`. Docs: https://docs.expo.dev/router/introduction.md
+- Until the migration is done, `AGENTS.md` and the codebase intentionally use React Navigation; do not mix the two.
+
+## Code partagé
+
+- `src/shared/` : règles métier communes à l'app et au module de commandes `server/` (livraison, prix par palier, paiements, statuts). Aucun import React Native ici. Après modification : `npm run shared:sync` (génère `server/src/shared/`, ne jamais l'éditer à la main) ; `npm run shared:check` vérifie la copie.
+- `src/ui/` : composants réutilisables (animations, en-tête, feuille du bas, formes, carte produit `ProductCard`). `src/icons.tsx` : icônes communes. Un écran n'importe jamais les pièces d'un autre écran ; les fichiers `*.parts.tsx` ne servent qu'à leur écran.
+- Couleurs : toujours via `C` (`src/theme.tsx`) ; ajouter un jeton plutôt qu'un code hexadécimal répété.
+- `src/store.tsx` : état de l'app en fournisseurs séparés (`useAuth`, `useCatalog`, `useHistory`, `useAddresses`, `useCart`, `useOrders`). Le panier n'enregistre que `{ k, variant, qty, selected }` : nom, photo, provenance et prix sont relus dans le catalogue. La commune de livraison est celle de l'adresse choisie, sinon la zone du profil.
+- Aucune donnée inventée à l'écran : avis, stocks, délais, minuteurs, livreurs ou bons doivent venir de Firestore ou du serveur. Une fonction sans donnée ni service derrière n'est pas affichée.
+
+## Scripts d'administration (`scripts/`, session `npx firebase-tools login`)
+
+- `node scripts/order-status.cjs SK-XXXXXX [statut]` : lit ou change le statut d'une commande (suivi en direct dans l'app).
+- `node scripts/set-admin.cjs +243… [--remove]` : rôle admin (action `updateOrderStatus` du serveur, écriture du catalogue).
+- `node scripts/import-pinduoduo.cjs [--dry-run]` : remplace le catalogue par `archive/pinduoduo/products.json`.
 
 ## Building with EAS
 
