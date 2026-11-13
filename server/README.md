@@ -42,6 +42,7 @@ GOOGLE_APPLICATION_CREDENTIALS=/chemin/cle.json PORT=8080 npm start
 
 - **Render / Railway / VPS** : racine `server`, commande `npm start`. URL de l'app : `https://<service>`.
 - **Vercel** : racine `server`, les routes sont `api/[action].js`. URL de l'app : `https://<projet>.vercel.app/api`.
+  Variable `NODEJS_HELPERS=0` obligatoire : sans elle, Vercel décode le corps et la signature du webhook nyole ne peut pas être vérifiée.
 
 ## Côté app
 
